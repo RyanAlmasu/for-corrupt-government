@@ -66,27 +66,35 @@ async def add_message(msg: Message, request: Request):
 
 @api.post("/react/{message_id}")
 async def react_message(message_id: str, reaction: Reaction, request: Request):
+    session_id = request.headers.get("X-Session-ID")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="Session ID diperlukan untuk memberi reaksi")
+
     for msg in messages_data:
         if msg["id"] == message_id:
             if message_id not in user_reactions:
                 user_reactions[message_id] = {}
 
-            if request.client.host in user_reactions[message_id]:
-                old_reaction = user_reactions[message_id][request.client.host]
+            # Jika user sudah pernah react sebelumnya
+            if session_id in user_reactions[message_id]:
+                old_reaction = user_reactions[message_id][session_id]
                 
                 if old_reaction == reaction.emoji:
-                    msg["reactions"][old_reaction] -= 1  
-                    del user_reactions[message_id][request.client.host]  
+                    msg["reactions"][old_reaction] -= 1  # Hapus reaksi jika sama
+                    del user_reactions[message_id][session_id]
                     return JSONResponse(content={"message": "Reaction dihapus", "reactions": msg["reactions"]})
 
+                # Ganti reaction lama dengan yang baru
                 msg["reactions"][old_reaction] -= 1  
 
-            user_reactions[message_id][request.client.host] = reaction.emoji
+            # Tambahkan reaction baru
+            user_reactions[message_id][session_id] = reaction.emoji
             msg["reactions"][reaction.emoji] += 1  
 
             return JSONResponse(content={"message": "Reaction berhasil diberikan atau diganti", "reactions": msg["reactions"]})
 
     raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
+
 
 @api.get("/messages")
 async def get_messages():
@@ -138,9 +146,17 @@ def fetch_messages():
         st.error("Gagal mengambil data dari server.")
         return []
 
+# Generate session ID unik jika belum ada
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
 def send_reaction(msg_id, emoji):
     try:
-        reaction_response = requests.post(f"{BACKEND_URL}/react/{msg_id}", json={"emoji": emoji})
+        reaction_response = requests.post(
+            f"{BACKEND_URL}/react/{msg_id}",
+            json={"emoji": emoji},
+            headers={"X-Session-ID": st.session_state.session_id}  # Kirim session ID
+        )
 
         if reaction_response.status_code == 200:
             response_data = reaction_response.json()
