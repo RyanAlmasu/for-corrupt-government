@@ -623,7 +623,6 @@ with st.expander("🧪 Test Kejujuran: Berapa Persen Mirip Pejabat?", expanded=T
             similarity = total_score
             
             # Tampilkan hasil dengan animasi
-            st.balloons()
             st.subheader("🕵️♂️ Hasil Test Kejujuran Kamu!")
             st.markdown(f"""
                 <div style="text-align: center; padding: 20px; border-radius: 10px; 
