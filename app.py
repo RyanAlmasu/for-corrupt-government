@@ -13,6 +13,11 @@ from pydantic import BaseModel, constr
 import uvicorn
 import random
 from threading import Lock
+import pandas as pd
+from bs4 import BeautifulSoup
+import re
+
+
 
 st.set_page_config(
     page_title="Suara Rakyat", 
@@ -310,7 +315,6 @@ class Reaction(BaseModel):
 def hash_username(username: str) -> str:
     return hashlib.sha256(username.encode()).hexdigest()
 
-
 @api.post("/messages")
 async def add_message(msg: Message, request: Request):
     hashed_username = hash_username(msg.username)
@@ -343,6 +347,8 @@ async def react_message(message_id: str, reaction: Reaction):
     with messages_lock:
         for msg in messages_data:
             if msg["id"] == message_id:
+                if reaction.emoji not in msg["reactions"]:
+                    raise HTTPException(status_code=400, detail="Emoji tidak valid")
                 msg["reactions"][reaction.emoji] += 1
                 return JSONResponse(
                     content={
@@ -594,21 +600,20 @@ with st.expander("🧪 Test Kejujuran: Berapa Persen Mirip Pejabat?", expanded=T
     else:
         test = st.session_state.test
         if not st.session_state.test_completed:
-            # Progress bar
             progress = test.current_question / len(test.questions)
             st.progress(progress)
             
-            # Tampilkan pertanyaan
             q = test.questions[test.current_question]
             st.subheader(f"Pertanyaan {test.current_question + 1}")
             st.markdown(f"#### {q['question']}")
             
-            # Tampilkan opsi
-            cols = st.columns(3)
-            for option in q['options']:
+            # PERBAIKAN UTAMA: Menempatkan tombol di kolom yang benar
+            cols = st.columns(len(q['options']))
+            for i, option in enumerate(q['options']):
+                with cols[i]:
                     if st.button(
                         option['text'], 
-                        key=f"q{test.current_question}_opt{option['score']}",  # Key unik berdasarkan skor
+                        key=f"q{test.current_question}_opt{option['score']}",
                         use_container_width=True
                     ):
                         test.total_score += option['score']
@@ -618,11 +623,9 @@ with st.expander("🧪 Test Kejujuran: Berapa Persen Mirip Pejabat?", expanded=T
                             st.session_state.test_completed = True
                         st.rerun()
         else:
-            # Hitung hasil
-            total_score = min(test.total_score, 100)  # Maksimal 100
+            total_score = min(test.total_score, 100)
             similarity = total_score
-            
-            # Tampilkan hasil dengan animasi
+
             st.subheader("🕵️♂️ Hasil Test Kejujuran Kamu!")
             st.markdown(f"""
                 <div style="text-align: center; padding: 20px; border-radius: 10px; 
@@ -648,9 +651,45 @@ with st.expander("🧪 Test Kejujuran: Berapa Persen Mirip Pejabat?", expanded=T
                 Jiwa kepemimpinan kuat! Direkomendasikan jadi ketua panitia proyek strategis nasional
                 """)
                 
-            # Tombol reset
             if st.button("🔄 Coba Lagi"):
                 st.session_state.test = None
                 st.session_state.test_started = False
                 st.session_state.test_completed = False
                 st.rerun()
+                
+# Data Kasus Korupsi
+st.title("📊 Kasus Korupsi Terbesar di Indonesia")
+st.write("Data kasus korupsi berdasarkan total kerugian negara dalam triliunan Rupiah. Source (https://id.wikipedia.org/wiki/Daftar_kasus_korupsi_di_Indonesia_menurut_nilai_kerugian)")
+
+# Data Kasus Korupsi
+korupsi_data = pd.DataFrame([
+    {"No": 1, "Perusahaan": "Pertamina", "Kasus": "Korupsi tata kelola minyak mentah", "Pelaku Utama": "Riva Siahaan", "Total Kerugian": 968.5, "Hukuman": "", "Pelaku Lain": "Sani Dinar Saifuddin, Yoki Firandi, Agus Purwono, Muhammad Kerry Indrianto Riza, Dimas Werhaspati, Gading Ramadhan Joedo"},
+    {"No": 2, "Perusahaan": "Timah", "Kasus": "Korupsi tata kelola timah", "Pelaku Utama": "Harvey Moeis", "Total Kerugian": 300, "Hukuman": "20 tahun", "Pelaku Lain": "Helena Lim, Mochtar Riza Pahlevi Tabrani, Suparta, Reza Andriansyah, Awi, Rosalina, Hendry Lie"},
+    {"No": 3, "Perusahaan": "Bank Indonesia", "Kasus": "Dana Bantuan Likuiditas Bank Indonesia", "Pelaku Utama": "Sjamsul Nursalim", "Total Kerugian": 138, "Hukuman": "15 tahun", "Pelaku Lain": "Sutrisno, Itjih"},
+    {"No": 4, "Perusahaan": "PT Duta Palma", "Kasus": "Penyerobotan lahan", "Pelaku Utama": "Surya Darmadi", "Total Kerugian": 104.1, "Hukuman": "16 tahun", "Pelaku Lain": "-"},
+    {"No": 5, "Perusahaan": "PT Trans Pacific Petrochemical Indonesia", "Kasus": "Jual kondensat", "Pelaku Utama": "Honggo Wendratno", "Total Kerugian": 37.8, "Hukuman": "16 tahun", "Pelaku Lain": "-"},
+    {"No": 6, "Perusahaan": "Asabri", "Kasus": "Pengelolaan keuangan dan dana investasi", "Pelaku Utama": "Benny Tjokrosaputro", "Total Kerugian": 22.7, "Hukuman": "Seumur hidup", "Pelaku Lain": "-"},
+    {"No": 7, "Perusahaan": "Jiwasraya", "Kasus": "Manipulasi perdagangan saham", "Pelaku Utama": "Isa Rachmatarwata", "Total Kerugian": 16.8, "Hukuman": "", "Pelaku Lain": "-"},
+    {"No": 8, "Perusahaan": "PT Musim Mas", "Kasus": "Izin ekspor sawit mentah", "Pelaku Utama": "Pierre Togar Sitanggang", "Total Kerugian": 12, "Hukuman": "6 tahun", "Pelaku Lain": "Indra Sari Wisnu Wardhana, Master Parulian Tumanggor, Lin Che Wei, Stanley MA"},
+    {"No": 9, "Perusahaan": "Garuda Indonesia", "Kasus": "Pengadaan pesawat CRJ1000 dan ATR 72-600", "Pelaku Utama": "Emirsyah Satar", "Total Kerugian": 9.37, "Hukuman": "10 tahun", "Pelaku Lain": "-"},
+    {"No": 10, "Perusahaan": "Kementerian Komunikasi dan Informatika", "Kasus": "Proyek BTS 4G", "Pelaku Utama": "Johnny G. Plate", "Total Kerugian": 8, "Hukuman": "15 tahun", "Pelaku Lain": "-"}
+])
+
+with st.expander("📋 Data Kasus Korupsi", expanded=True):
+    # Filter Perusahaan
+    perusahaan_list = korupsi_data["Perusahaan"].unique().tolist()
+    pilih_perusahaan = st.multiselect("Filter Perusahaan", perusahaan_list, default=perusahaan_list)
+    
+    # Filter berdasarkan Total Kerugian
+    min_kerugian, max_kerugian = st.slider("Filter Total Kerugian (Triliun Rp)", min_value=0.0, max_value=1000.0, value=(0.0, 1000.0))
+    
+    # Filter data
+    filtered_data = korupsi_data[(korupsi_data["Perusahaan"].isin(pilih_perusahaan)) &
+                                 (korupsi_data["Total Kerugian"] >= min_kerugian) &
+                                 (korupsi_data["Total Kerugian"] <= max_kerugian)]
+    
+    # Tampilkan Data
+    st.dataframe(filtered_data, use_container_width=True)
+    
+with st.expander("📈 Grafik Total Kerugian per Perusahaan", expanded=True):
+    st.bar_chart(filtered_data.set_index("Perusahaan")["Total Kerugian"])
